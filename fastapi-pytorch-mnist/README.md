@@ -36,6 +36,11 @@ pip install torch torchvision
 
 ## Test
 
+0. Install dependencies
+```bash
+pip install -r requirements.txt
+```
+
 1. Build model
 ```bash
 python mnist.py --save-model
