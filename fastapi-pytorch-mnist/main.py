@@ -25,8 +25,8 @@ def read_item(item_id: int, q: Union[str, None] = None):
 
 
 class Item(BaseModel):
-    # 28x28=784 integers
-    image: list[int]
+    # size: 28x28=784
+    image: list
 
 
 @app.post("/mnist")
