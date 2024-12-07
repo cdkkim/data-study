@@ -24,5 +24,4 @@ for i in range(len(dataset)):
     res = requests.post('http://localhost:8000/mnist', json={'image': image_array}).json()
     print('Correct:', label, '\t', 'Predicted:', res)
 
-pdb.set_trace()
 

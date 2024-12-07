@@ -10,7 +10,7 @@ import pdb
 
 app = FastAPI()
 model = Net()
-model.load_state_dict(torch.load('mnist_cnn.pt', weights_only=True))
+#model.load_state_dict(torch.load('app/mnist_cnn.pt', weights_only=True))
 model.eval()
 
 
@@ -34,6 +34,6 @@ def infer_mnist(request_body: Item):
     data = torch.tensor(request_body.image).view(1, 1, 28, 28)
     output = model(data)
     pred = output.argmax(dim=1, keepdim=True)  # get the index of the max log-probability
-    print(pred)
+    #print(pred)
     return { 'data': pred.item() }
 
