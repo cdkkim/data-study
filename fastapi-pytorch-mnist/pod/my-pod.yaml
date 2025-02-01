@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: fastapi-pytorch-mnist
+spec:
+  containers:
+  - name: fastapi-pytorch-mnist
+    image: fastapi-pytorch-mnist
+    imagePullPolicy: Never
+    ports:
+    - containerPort: 80

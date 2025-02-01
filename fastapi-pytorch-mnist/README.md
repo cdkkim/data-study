@@ -49,6 +49,7 @@ python mnist.py --save-model
 2. Run server
 ```bash
 fastapi dev main.py
+docker run -p 8080:80 fastapi-pytorch-mnist
 ```
 
 3. Run test script
