@@ -65,3 +65,22 @@ python test.py
 ### Server log
 ![server log](docs/server_log.png "Server log")
 
+
+## 2025.02.15
+### Run HPA
+```
+kubectl apply -f nginx-deployment.yaml
+kubectl expose deployment nginx-deployment --type=ClusterIP --name=nginx-service
+kubectl autoscale deployment nginx-deployment --cpu-percent=40 --min=1 --max=10
+kubectl get hpa
+kubectl run -i --tty load-generator --image=busybox -- /bin/sh
+while true; do wget -q -O- http://nginx-service.default.svc.cluster.local; done
+kubectl run stress --image=alpine -- sh -c "apk add --no-cache stress && stress --cpu 4 --timeout 600s"
+kubectl exec  load-generator -it -- /bin/sh
+
+kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+kubectl get deployment metrics-server -n kube-system
+kubectl describe deployment metrics-server -n kube-system
+kubectl top pods
+kubectl top nodes
+```
