@@ -1,0 +1,27 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-deployment
+  labels:
+    app: nginx
+spec:
+  replicas: 5
+  selector:
+    matchLabels:
+      app: fastapi-pytorch-mnist
+  template:
+    metadata:
+      labels:
+        app: fastapi-pytorch-mnist
+    spec:
+      containers:
+      - name: fastapi-pytorch-mnist
+        image: fastapi-pytorch-mnist
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 80
+        resources:
+          limits:
+            cpu: 200m
+          requests:
+            cpu: 100m

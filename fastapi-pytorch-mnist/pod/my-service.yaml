@@ -8,4 +8,3 @@ spec:
   ports:
     - protocol: HTTP
       port: 80
-      targetPort: 9376
