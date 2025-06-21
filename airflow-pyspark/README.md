@@ -1,3 +1,32 @@
+# airflow-pyspark
+
+## Steps
+
+### 1. Configure
+```bash
+brew install astro
+astro dev init
+```
+
+#### Reference
+- [How to run PySpark with Apache Airflow - Youtube](https://www.youtube.com/watch?v=L3VuPnBQBCM&ab_channel=DatawithMarc)
+- [How to run PySpark with Apache Airflow - Notion](https://robust-dinosaur-2ef.notion.site/How-to-run-PySpark-with-Apache-Airflow-PUBLIC-1449e45d4dbe8077828be971b0078495)
+
+### 2. Start
+```bash
+astro dev start # takes ~5 minutes
+```
+
+### 3. Run Airflow
+```
+username: admin
+password: admin
+```
+
+### 4. Run PySpark
+
+---
+
 Overview
 ========
 
