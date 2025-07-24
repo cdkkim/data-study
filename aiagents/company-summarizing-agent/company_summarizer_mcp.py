@@ -5,6 +5,7 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.chat_models import ChatOpenAI
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Qdrant
+from langchain_community.retrievers import BM25Retriever
 from langchain_core.documents import Document
 from langchain_core.messages import BaseMessage, HumanMessage
 from langchain_core.tools import tool
@@ -19,6 +20,7 @@ from qdrant_client.http.models import VectorParams, Distance
 # -----------------------------
 embedding_model = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
 VECTOR_DB_DIR = "db/company_vectors"
+bm25_retrievers = {}  # Cache per company
 
 
 # -----------------------------
@@ -99,25 +101,85 @@ def update_vectorstore_with_new_docs(company_name: str, new_texts: List[str]) ->
     return new_chunks
 
 
+def get_bm25_retriever(company_name: str, texts: List[str]) -> BM25Retriever:
+    if company_name in bm25_retrievers:
+        return bm25_retrievers[company_name]
+
+    splitter = RecursiveCharacterTextSplitter(chunk_size=512, chunk_overlap=50)
+    chunks = []
+    for text in texts:
+        chunks.extend(splitter.split_text(text))
+
+    bm25 = BM25Retriever.from_texts(chunks)
+    bm25.k = 5
+    bm25_retrievers[company_name] = bm25
+    return bm25
+
+
 def retrieve_from_vectorstore(company_name: str, query: str) -> List[Document]:
     vs = get_or_create_vectorstore(company_name)
     return vs.similarity_search(query, k=5)
+
+
+def rerank_documents(query: str, docs: List[Document], llm=None, top_k=5) -> List[Document]:
+    if not docs:
+        return []
+
+    if not llm:
+        llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+
+    reranked = []
+    for doc in docs:
+        score_prompt = f"""
+Rate the following document's relevance to the query on a scale from 1 to 10.
+
+Query: {query}
+
+Document:
+{doc.page_content}
+
+Only return the number:
+"""
+        try:
+            result = llm.invoke(score_prompt)
+            score = int("".join(filter(str.isdigit, result.content)))
+        except Exception:
+            score = 0
+        reranked.append((doc, score))
+
+    reranked.sort(key=lambda x: x[1], reverse=True)
+    return [doc for doc, _ in reranked[:top_k]]
+
+
+def hybrid_retrieve(query: str, company_name: str, fresh_docs: List[str]) -> List[str]:
+    # Step 1: Update vector store
+    update_vectorstore_with_new_docs(company_name, fresh_docs)
+
+    # Step 2: Retrieve from vector store
+    vector_results = retrieve_from_vectorstore(company_name, query)
+
+    # Step 3: Retrieve using BM25
+    bm25_retriever = get_bm25_retriever(company_name, fresh_docs)
+    bm25_results = bm25_retriever.get_relevant_documents(query)
+
+    # Step 4: Merge and rerank
+    merged = list({doc.page_content: doc for doc in vector_results + bm25_results}.values())
+    reranked = rerank_documents(query, merged, llm=llm, top_k=5)
+    return [doc.page_content for doc in reranked]
 
 
 # -----------------------------
 # RAG Retriever Tool
 # -----------------------------
 @tool(
-    description="Retrieve company information using web search and update a per-company vector database with new information. Deduplicates and returns relevant chunks from the vector store for the given query.")
+    # description="Retrieve company information using web search and update a per-company vector database with new information. Deduplicates and returns relevant chunks from the vector store for the given query."
+description="Retrieve company info using web + hybrid BM25 and vector search.",
+)
 def rag_company_retriever(query: str, company_name: str) -> List[str]:
     search = TavilySearch(max_results=5)
     fresh_results = search.run(query)
     fresh_docs = [r['content'] for r in fresh_results['results']]
-
-    update_vectorstore_with_new_docs(company_name, fresh_docs)
-    results = retrieve_from_vectorstore(company_name, query)
-
-    return [doc.page_content for doc in results]
+    return hybrid_retrieve(query, company_name, fresh_docs)
 
 
 # -----------------------------
@@ -174,6 +236,11 @@ Provide:
         return state
 
 
+def prompt_tuning(original: str):
+    rewritten = original
+    return rewritten
+
+
 # -----------------------------
 # LangGraph Assembly
 # -----------------------------
@@ -194,8 +261,9 @@ if __name__ == '__main__':
     try:
         graph = get_company_summary_graph()
 
-        query = "Tell me about Meta"
         company = "Meta"
+        query = f"Tell me about {company}"
+        query = prompt_tuning(query)
 
         initial_state = CompanyState(
             company_name=company,
