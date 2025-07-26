@@ -241,10 +241,7 @@ def prompt_tuning(original: str):
     return rewritten
 
 
-# -----------------------------
-# LangGraph Assembly
-# -----------------------------
-def get_company_summary_graph():
+def get_graph():
     graph = StateGraph(state_schema=CompanyState)
     graph.add_node("retrieval", retrieval_node)
     graph.add_node("summarize", summarize_company)
@@ -254,12 +251,9 @@ def get_company_summary_graph():
     return graph.compile()
 
 
-# -----------------------------
-# Runtime Execution
-# -----------------------------
 if __name__ == '__main__':
     try:
-        graph = get_company_summary_graph()
+        graph = get_graph()
 
         company = "Meta"
         query = f"Tell me about {company}"
