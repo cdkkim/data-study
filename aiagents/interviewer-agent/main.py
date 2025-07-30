@@ -14,10 +14,12 @@ app = FastAPI(
 class SummarizeCompanyRequest(BaseModel):
     company_name: str
 
+
 # Response schema
 class SummarizeResponse(BaseModel):
     company_name: str
     summary: str
+
 
 @app.post("/company-summarize", response_model=SummarizeResponse)
 def summarize_company(request: SummarizeCompanyRequest):
