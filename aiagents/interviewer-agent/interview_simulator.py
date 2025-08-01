@@ -1,17 +1,32 @@
+import asyncio
+import json
 import os
 import pdb
-from typing import Optional, Literal, List, TypedDict
+from typing import Optional, Literal, List
 
 import requests
 import streamlit as st
 from PyPDF2 import PdfReader
-from langchain_openai import ChatOpenAI
 from langchain_core.messages import AIMessage, HumanMessage, BaseMessage
+from langchain_openai import ChatOpenAI
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
 from pydantic import BaseModel
 from typing_extensions import Annotated
 
+from graph import convert_graph_as_agent
+
+try:
+    import subprocess
+    import tempfile
+
+    HALLUCINATION_CHECK_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: Could not setup hallucination check: {e}")
+    HALLUCINATION_CHECK_AVAILABLE = False
+
+
+hallucination_agent = convert_graph_as_agent()
 
 # ----------------------
 # State
@@ -24,6 +39,7 @@ class InterviewAgentState(BaseModel):
     language: Optional[Literal['ko', 'en']] = 'ko'
     interview_type: Optional[Literal['behavioral', 'technical', 'general']]
     questions: List[str] = []
+    verified_questions: List[str] = []
     question_index: int = 0
     current_question: Optional[str]
     answers: List[str] = []
@@ -66,7 +82,7 @@ def generate_mock_questions(state: InterviewAgentState) -> dict:
     print('generate_mock_questions')
     llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.7)
     prompt = f"""
-You are a mock interviewer. Based on the following resume and job description, generate 5 {state.interview_type} interview questions in {state.language.upper()}.
+You are a mock interviewer. Based on the following resume and job description, generate 5 {state.interview_type} interview questions in Korean.
 
 Resume:
 {state.resume}
@@ -81,9 +97,37 @@ Job Description:
     return {"questions": questions, "question_index": 0, "messages": messages}
 
 
+def verify_questions(state: InterviewAgentState) -> dict:
+    print('verify_questions with agent')
+    verified_questions = []
+
+    for question in state.questions[1:]:
+        if not question.strip():
+            continue
+
+        result = hallucination_agent.run_sync(question)
+        print('======================')
+        print(f"Question: {question}")
+        print(f"Result: {result}")
+        print('======================')
+
+        try:
+            result_data = json.loads(result.parts[0].content)
+            hallucination_score = result_data.get('score', 0.0)
+            if hallucination_score < 0.7:
+                verified_questions.append(question)
+            else:
+                print(f"Filtered out: {question} (score: {hallucination_score})")
+        except Exception as e:
+            print(f"Failed to verify question: {question} with error: {e}")
+            verified_questions.append(question)
+
+    return {"verified_questions": verified_questions}
+
+
 def present_question(state: InterviewAgentState) -> InterviewAgentState:
     print('present_question')
-    questions = state.questions
+    questions = state.verified_questions if state.verified_questions else state.questions
     question_index = state.question_index
     if questions and question_index < len(questions):
         current_question = questions[question_index]
@@ -104,12 +148,14 @@ def get_graph():
     graph.add_node("fetch_job_description", fetch_job_description)
     graph.add_node("analyze_resume_and_job", analyze_resume_and_job)
     graph.add_node("generate_mock_questions", generate_mock_questions)
+    graph.add_node("verify_questions", verify_questions)
     graph.add_node("present_question", present_question)
     graph.add_edge(START, "parse_resume_file")
     graph.add_edge("parse_resume_file", "fetch_job_description")
     graph.add_edge("fetch_job_description", "analyze_resume_and_job")
     graph.add_edge("analyze_resume_and_job", "generate_mock_questions")
-    graph.add_edge("generate_mock_questions", "present_question")
+    graph.add_edge("generate_mock_questions", "verify_questions")
+    graph.add_edge("verify_questions", "present_question")
     graph.add_edge("present_question", END)
     return graph.compile()
 
@@ -126,6 +172,7 @@ def run_cli(resume_path: str, job_url: str):
         language=None,
         interview_type=None,
         questions=[],
+        verified_questions=[],
         question_index=0,
         current_question=None,
         answers=[],
@@ -142,7 +189,8 @@ def run_cli(resume_path: str, job_url: str):
         state.update(update)
     print("\n✅ Interview complete! Here's a summary:\n")
 
-    for i, question in enumerate(state["questions"]):
+    questions_to_show = state.get("verified_questions", []) or state.get("questions", [])
+    for i, question in enumerate(questions_to_show):
         print(f"Q{i + 1}: {question}")
         print(f"A{i + 1}: {state.get('answers')[i] if i < len(state.get('answers')) else '[No answer]'}\n")
 
@@ -171,6 +219,7 @@ if st.button("Start Interview") and uploaded and job_url:
         "language": None,
         "interview_type": None,
         "questions": [],
+        "verified_questions": [],
         "question_index": 0,
         "current_question": None,
         "answers": [],
@@ -197,7 +246,8 @@ if st.session_state.agent_state:
     else:
         st.success("✅ Interview completed!")
         st.markdown("### Your Answers:")
-        for i, q in enumerate(state.get("questions", [])):
+        questions_to_show = state.get("verified_questions", []) or state.get("questions", [])
+        for i, q in enumerate(questions_to_show):
             st.markdown(f"**Q{i + 1}:** {q}")
             st.markdown(f"> {state['answers'][i] if i < len(state['answers']) else '_No answer_'}")
 
