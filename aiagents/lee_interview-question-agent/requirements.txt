@@ -1,0 +1,22 @@
+fastapi
+uvicorn[standard] # 비동기 웹 서버
+
+langchain
+langgraph
+langchain_core
+langchain_community
+langchain-google-genai
+pydantic
+python-dotenv
+langsmith
+unstructured # 다양한 파일 형식(PDF 등) 파싱 지원
+beautifulsoup4 # HTML 파싱 지원
+requests # 웹 페이지 콘텐츠 다운로드
+pypdf # PDF 파싱 (unstructured 내부에서 사용될 수 있음)
+pyhwp
+python-multipart
+httpx
+playwright
+# python -m playwright install
+langchain-unstructured
+"unstructured[pdf]"
