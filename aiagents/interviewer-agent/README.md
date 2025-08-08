@@ -8,6 +8,11 @@ pip install -r requirements.txt
 
 ## Run
 
+```
+export OPENAI_API_KEY=<openai-api-key>
+export TAVILY_API_KEY=<tavily-api-key>
+```
+
 ```python
 python interview_simulator.py --resume <path/to/resume.pdf> --job <job.url>
 ```

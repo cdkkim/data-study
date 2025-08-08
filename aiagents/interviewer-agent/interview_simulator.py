@@ -6,6 +6,7 @@ from typing import Optional, Literal, List
 
 import requests
 import streamlit as st
+from audio_recorder_streamlit import audio_recorder
 from PyPDF2 import PdfReader
 from langchain_core.messages import AIMessage, HumanMessage, BaseMessage
 from langchain_openai import ChatOpenAI
@@ -16,6 +17,7 @@ from pydantic import BaseModel
 from typing_extensions import Annotated
 import base64
 from openai import AsyncOpenAI
+from openai import OpenAI
 # from pydub import AudioSegment
 import tempfile
 
@@ -175,6 +177,28 @@ def generate_tts_audio(question: str, voice="alloy") -> str:
 
     return loop.run_until_complete(create_audio())
 
+def transcribe_audio_bytes(audio_bytes: bytes) -> str:
+    """Save in-browser recorded audio bytes to a temp WAV and transcribe with OpenAI."""
+    tmp_wav = None
+    try:
+        client = OpenAI()
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as f:
+            f.write(audio_bytes)
+            tmp_wav = f.name
+        with open(tmp_wav, "rb") as f:
+            resp = client.audio.transcriptions.create(
+                model="gpt-4o-mini-transcribe",  # or "gpt-4o-transcribe" if available on your account
+                file=f,
+                response_format="text",
+            )
+        return resp if isinstance(resp, str) else getattr(resp, "text", "")
+    finally:
+        if tmp_wav and os.path.exists(tmp_wav):
+            try:
+                os.remove(tmp_wav)
+            except Exception:
+                pass
+
 
 @st.cache_data
 def generate_tts_audio_cached(question: str):
@@ -282,27 +306,46 @@ if st.session_state.agent_state:
         question = state["current_question"]
         st.subheader(f"Q{state['question_index']}: {question}")
 
-        if st.button("▶ Play"):
-            with st.spinner("Generating voice..."):
-                audio_path = generate_tts_audio(question)
-                # audio_file = open(audio_path, "rb")
-                # audio_bytes = audio_file.read()
-                # st.audio(audio_bytes, format="audio/mp3")
+        col_play, col_answer = st.columns([1, 1])
 
-        answer = st.text_area("Your Answer")
+        with col_play:
+            if st.button("▶ Play"):
+                with st.spinner("Generating voice..."):
+                    # Plays through LocalAudioPlayer on the server side
+                    # (If you want in-browser playback, export to file and use st.audio)
+                    generate_tts_audio(question)
+
+        with col_answer:
+            # The mic widget toggles recording on click; clicking again stops and returns audio bytes
+            audio_bytes = audio_recorder(text="Answer", icon_size="2x")
+            if audio_bytes:
+                st.audio(audio_bytes, format="audio/wav")
+                with st.spinner("Transcribing..."):
+                    transcript = transcribe_audio_bytes(audio_bytes)
+                # Show transcript and prefill the answer box
+                st.write("**Transcript:**")
+                st.code(transcript)
+                st.session_state["answer_input"] = transcript
+
+        # Editable answer box; will be prefilled after STT
+        answer = st.text_area("Your Answer", key="answer_input")
+
         if st.button("Next Question"):
-            if answer.strip():
-                state["answers"].append(answer.strip())
+            txt = st.session_state.get("answer_input", "")
+            if txt.strip():
+                state["answers"].append(txt.strip())
             update = present_question(InterviewAgentState(**state))
             state.update(update)
             st.session_state.agent_state = state
+            # Clear the input for the next question
+            st.session_state["answer_input"] = ""
             st.rerun()
     else:
         st.success("✅ Interview completed!")
         st.markdown("### Your Answers:")
         questions_to_show = state.get("verified_questions", []) or state.get("questions", [])
         for i, q in enumerate(questions_to_show):
-            st.markdown(f"**Q{i + 1}:** {q}")
+            st.markdown(f"{q}")
             st.markdown(f"> {state['answers'][i] if i < len(state['answers']) else '_No answer_'}")
 
 if __name__ == "__main__":
