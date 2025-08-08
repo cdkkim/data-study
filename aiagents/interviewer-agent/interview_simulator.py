@@ -11,8 +11,13 @@ from langchain_core.messages import AIMessage, HumanMessage, BaseMessage
 from langchain_openai import ChatOpenAI
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
+from openai.helpers import LocalAudioPlayer
 from pydantic import BaseModel
 from typing_extensions import Annotated
+import base64
+from openai import AsyncOpenAI
+# from pydub import AudioSegment
+import tempfile
 
 from graph import convert_graph_as_agent
 
@@ -40,7 +45,7 @@ class InterviewAgentState(BaseModel):
     interview_type: Optional[Literal['behavioral', 'technical', 'general']]
     questions: List[str] = []
     verified_questions: List[str] = []
-    question_index: int = 0
+    question_index: int = 1
     current_question: Optional[str]
     answers: List[str] = []
     messages: Annotated[List[BaseMessage], add_messages]
@@ -139,6 +144,43 @@ def present_question(state: InterviewAgentState) -> InterviewAgentState:
     return state
 
 
+def generate_tts_audio(question: str, voice="alloy") -> str:
+    """
+    Generate TTS audio for the given question using OpenAI and return path to audio file (mp3).
+    voice: alloy, nova, shimmer, echo
+    """
+    client = AsyncOpenAI()
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+    async def create_audio():
+        async with client.audio.speech.with_streaming_response.create(
+                model="gpt-4o-mini-tts",
+                voice=voice,
+                input=question,
+                instructions="Speak in a professional and warm tone.",
+                response_format="pcm",
+        ) as response:
+            await LocalAudioPlayer().play(response)
+            # with tempfile.NamedTemporaryFile(delete=False, suffix=".pcm") as f_pcm:
+            #     async for chunk in response.iter_bytes():
+            #         f_pcm.write(chunk)
+            #     pcm_path = f_pcm.name
+            #
+            # # Convert PCM to MP3 using pydub
+            # audio = AudioSegment.from_file(pcm_path, format="s16le", frame_rate=24000, channels=1)
+            # mp3_path = pcm_path.replace(".pcm", ".mp3")
+            # audio.export(mp3_path, format="mp3")
+            # return mp3_path
+
+    return loop.run_until_complete(create_audio())
+
+
+@st.cache_data
+def generate_tts_audio_cached(question: str):
+    return generate_tts_audio(question)
+
+
 # ----------------------
 # Graph builder
 # ----------------------
@@ -148,15 +190,18 @@ def get_graph():
     graph.add_node("fetch_job_description", fetch_job_description)
     graph.add_node("analyze_resume_and_job", analyze_resume_and_job)
     graph.add_node("generate_mock_questions", generate_mock_questions)
-    graph.add_node("verify_questions", verify_questions)
+    # graph.add_node("verify_questions", verify_questions)
     graph.add_node("present_question", present_question)
+
     graph.add_edge(START, "parse_resume_file")
     graph.add_edge("parse_resume_file", "fetch_job_description")
     graph.add_edge("fetch_job_description", "analyze_resume_and_job")
     graph.add_edge("analyze_resume_and_job", "generate_mock_questions")
-    graph.add_edge("generate_mock_questions", "verify_questions")
-    graph.add_edge("verify_questions", "present_question")
+    # graph.add_edge("generate_mock_questions", "verify_questions")
+    # graph.add_edge("verify_questions", "present_question")
+    graph.add_edge("generate_mock_questions", "present_question")
     graph.add_edge("present_question", END)
+
     return graph.compile()
 
 
@@ -234,7 +279,16 @@ if st.button("Start Interview") and uploaded and job_url:
 if st.session_state.agent_state:
     state = st.session_state.agent_state
     if state["current_question"]:
-        st.subheader(f"Q{state['question_index']}: {state['current_question']}")
+        question = state["current_question"]
+        st.subheader(f"Q{state['question_index']}: {question}")
+
+        if st.button("▶ Play"):
+            with st.spinner("Generating voice..."):
+                audio_path = generate_tts_audio(question)
+                # audio_file = open(audio_path, "rb")
+                # audio_bytes = audio_file.read()
+                # st.audio(audio_bytes, format="audio/mp3")
+
         answer = st.text_area("Your Answer")
         if st.button("Next Question"):
             if answer.strip():
