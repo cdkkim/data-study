@@ -50,11 +50,13 @@ echo "GOOGLE_API_KEY='${GOOGLE_API_KEY}'" > .streamlit/secrets.toml
 ```
 
 #### Project Structure
+```
 root/
 ├── persona_generator.py    # 페르소나 프롬프트 생성 (→ personas.json)
 ├── streamlit_app.py        # 마케팅 상담사 AI Agent Streamlit 앱
 ├── personas.json           # persona_generator가 생성하는 페르소나 파일
 └── requirements.txt
+```
 
 #### 실행
 ```
