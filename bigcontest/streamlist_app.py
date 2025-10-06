@@ -59,7 +59,8 @@ generate_button = st.button("🔍 전략 생성하기")
 # ─────────────────────────────
 # 4. Gemini API 호출 함수
 # ─────────────────────────────
-def call_gemini(prompt, model_name="gemini-1.5-pro", temperature=0.6, max_output_tokens=2048):
+# https://cloud.google.com/vertex-ai/generative-ai/docs/models/gemini/2-5-flash
+def call_gemini(prompt, model_name="gemini-2.5-flash", temperature=0.6, max_output_tokens=65535):
     try:
         model = genai.GenerativeModel(model_name)
         generation_config = {"temperature": temperature, "max_output_tokens": max_output_tokens}
