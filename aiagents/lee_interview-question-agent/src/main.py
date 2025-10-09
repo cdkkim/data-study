@@ -11,8 +11,8 @@ from typing import Optional, List
 from pydantic import BaseModel,Field 
 
 # 프로젝트 내부 모듈 임포트 (경로 수정: src.agents -> src.agent)
-from src.agents.state import InterviewAgentState, JobPostingInfo, ResumeInfo, InterviewQuestion
-from src.agents.graph import build_interview_agent_graph
+from agents.state import InterviewAgentState, JobPostingInfo, ResumeInfo, InterviewQuestion
+from agents.graph import build_interview_agent_graph
 
 # LangSmith 설정
 load_dotenv()

@@ -65,7 +65,7 @@ def generate_personas(limit=10):
     return personas
 
 if __name__ == "__main__":
-    personas = generate_personas(limit=20)  # 테스트: 20개만 생성
+    personas = generate_personas(limit=1000)
     with open("personas.json", "w", encoding="utf-8") as f:
         json.dump(personas, f, ensure_ascii=False, indent=2)
     print(f"[DONE] personas.json 저장 완료 (총 {len(personas)}개)")
