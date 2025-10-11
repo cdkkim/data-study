@@ -2,6 +2,7 @@ import streamlit as st
 import google.generativeai as genai
 import json
 import os
+import time
 
 # ─────────────────────────────
 # 1. Gemini API 설정
@@ -61,13 +62,39 @@ generate_button = st.button("🔍 전략 생성하기")
 # ─────────────────────────────
 # https://cloud.google.com/vertex-ai/generative-ai/docs/models/gemini/2-5-flash
 def call_gemini(prompt, model_name="gemini-2.5-flash", temperature=0.6, max_output_tokens=65535):
+    """
+    Stream partial Gemini responses so the UI can render them incrementally.
+    """
     try:
         model = genai.GenerativeModel(model_name)
         generation_config = {"temperature": temperature, "max_output_tokens": max_output_tokens}
-        response = model.generate_content(prompt, generation_config=generation_config)
-        return response.text if hasattr(response, "text") else str(response)
+        responses = model.generate_content(
+            prompt,
+            generation_config=generation_config,
+            stream=True,
+        )
+
+        for chunk in responses:
+            # `chunk.text` contains the incremental delta for the chunk.
+            text_chunk = getattr(chunk, "text", None)
+            if not text_chunk and getattr(chunk, "candidates", None):
+                candidate = chunk.candidates[0] if chunk.candidates else None
+                if candidate and getattr(candidate, "content", None):
+                    parts = getattr(candidate.content, "parts", [])
+                    text_chunk = "".join(
+                        part.text for part in parts if hasattr(part, "text")
+                    )
+
+            if text_chunk:
+                yield text_chunk
+
+        # Ensure the stream is fully resolved so later reads (if any) succeed.
+        try:
+            responses.resolve()
+        except Exception:
+            pass
     except Exception as e:
-        return f"❌ Gemini 호출 오류: {e}"
+        yield f"❌ Gemini 호출 오류: {e}"
 
 # ─────────────────────────────
 # 5. 선택된 persona → prompt 불러오기
@@ -105,16 +132,43 @@ if generate_button:
     with st.expander("📜 프롬프트 보기"):
         st.code(selected_prompt, language="markdown")
 
-    st.info("Gemini API 호출 중입니다... ⏳")
-    with st.spinner("AI 전략 생성 중..."):
-        result = call_gemini(selected_prompt)
-
     st.markdown("### 📈 생성된 마케팅 전략 결과")
-    st.markdown(result)
+    status_placeholder = st.empty()
+    status_placeholder.info("전략을 생성중입니다... ⏳")
 
-    st.download_button(
-        label="⬇️ 결과 다운로드 (Markdown)",
-        data=result,
-        file_name=f"marketing_plan_{industry}_{store_age}.md",
-        mime="text/markdown",
-    )
+    status_messages = [
+        "1/4 시장 및 경쟁 데이터를 검토하고 있어요...",
+        "2/4 딱 맞는 마케팅 채널을 조사하고하고 있어요...",
+        "3/4 실행 가능한 전략 아이디어를 조합하는 중이에요...",
+        "4/4 전달할 내용을 정돈하고 있어요...",
+    ]
+    step_interval = 2.0
+    step_state = {"idx": 0, "next_time": time.time() + step_interval}
+
+    def stream_with_status():
+        for chunk in call_gemini(selected_prompt):
+            now = time.time()
+            if step_state["idx"] < len(status_messages) and now >= step_state["next_time"]:
+                status_placeholder.info(
+                    f"전략을 생성중입니다... ⏳\n\n{status_messages[step_state['idx']]}"
+                )
+                step_state["idx"] += 1
+                step_state["next_time"] = now + step_interval
+            yield chunk
+
+    result = st.write_stream(stream_with_status())
+
+    if not result or not result.strip():
+        status_placeholder.warning("⚠️ Gemini로부터 응답이 비어 있습니다. 잠시 후 다시 시도해주세요.")
+        st.warning("⚠️ Gemini로부터 응답이 비어 있습니다. 잠시 후 다시 시도해주세요.")
+    elif result.lstrip().startswith("❌"):
+        status_placeholder.error(result)
+        st.error(result)
+    else:
+        status_placeholder.success("전략 생성이 완료되었습니다! ✅")
+        st.download_button(
+            label="⬇️ 결과 다운로드 (Markdown)",
+            data=result,
+            file_name=f"marketing_plan_{industry}_{store_age}.md",
+            mime="text/markdown",
+        )

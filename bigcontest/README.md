@@ -61,7 +61,7 @@ root/
 #### 실행
 ```
 # Prepare persona.json
-python prompt_generator.py
+python persona_generator.py
 
 # Run app
 streamlit run streamlit_app.py
