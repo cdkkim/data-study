@@ -36,6 +36,61 @@ def ensure_data_evidence(prompt: str) -> str:
         return prompt
     return prompt.rstrip() + DATA_EVIDENCE_GUIDE
 
+
+def extract_executive_summary(markdown_text: str, max_points: int = 4):
+    """생성된 전략 본문에서 요약 섹션의 핵심 불릿을 추출."""
+    lines = markdown_text.splitlines()
+    summary_lines = []
+
+    def clean_bullet(line):
+        stripped = line.strip()
+        if not stripped:
+            return None
+        bullet_match = re.match(r"^[-\*\u2022]\s*(.+)", stripped)
+        if bullet_match:
+            return bullet_match.group(1).strip()
+        numbered_match = re.match(r"^\d+[.)]\s*(.+)", stripped)
+        if numbered_match:
+            return numbered_match.group(1).strip()
+        return None
+
+    heading_pattern = re.compile(r"#{1,6}\s*요약")
+    start_idx = next(
+        (idx for idx, line in enumerate(lines) if heading_pattern.match(line.strip())),
+        None,
+    )
+
+    if start_idx is not None:
+        for line in lines[start_idx + 1 :]:
+            stripped = line.strip()
+            if stripped.startswith("#"):
+                break
+            cleaned = clean_bullet(stripped)
+            if cleaned:
+                summary_lines.append(cleaned)
+            if len(summary_lines) >= max_points:
+                break
+
+    if not summary_lines:
+        for line in lines:
+            cleaned = clean_bullet(line)
+            if cleaned:
+                summary_lines.append(cleaned)
+            if len(summary_lines) >= max_points:
+                break
+
+    if not summary_lines:
+        collapsed = re.sub(r"\s+", " ", markdown_text)
+        sentences = re.split(r"(?<=[.!?])\s", collapsed)
+        for sentence in sentences:
+            cleaned = sentence.strip()
+            if cleaned:
+                summary_lines.append(cleaned)
+            if len(summary_lines) >= max_points:
+                break
+
+    return summary_lines
+
 # ─────────────────────────────
 # 2. Persona 데이터 로드
 # ─────────────────────────────
@@ -110,7 +165,13 @@ def is_franchise(name: str) -> bool:
 DEFAULT_MODEL = "gemini-2.5-flash"
 
 # https://cloud.google.com/vertex-ai/generative-ai/docs/models/gemini/2-5-flash
-def stream_gemini(prompt, model=DEFAULT_MODEL, temperature=0.6, max_tokens=65535):
+def stream_gemini(
+    prompt,
+    model=DEFAULT_MODEL,
+    temperature=0.6,
+    max_tokens=65535,
+    output_placeholder=None,
+):
     """안정적인 스트리밍 + 완료사유 점검 + 친절한 에러"""
     status_placeholder = st.empty()
     status_placeholder.info("전략을 생성중입니다... ⏳")
@@ -135,7 +196,7 @@ def stream_gemini(prompt, model=DEFAULT_MODEL, temperature=0.6, max_tokens=65535
 
         stream = gmodel.generate_content(prompt, generation_config=cfg, stream=True)
 
-        placeholder = st.empty()
+        placeholder = output_placeholder or st.empty()
         full_text = ""
 
         # 1) 스트리밍 수집 (chunk.text가 없을 수도 있으니 candidates도 확인)
@@ -249,7 +310,7 @@ def find_persona(업종, 프랜차이즈, 점포연령="미상", 고객연령대
 # 7. Streamlit UI 설정
 # ─────────────────────────────
 st.set_page_config(page_title="AI 마케팅 컨설턴트", layout="wide")
-st.title("💬 AI 마케팅 컨설턴트 (Gemini 기반)")
+st.title("💬 AI 마케팅 컨설턴트")
 
 if st.button("🔄 새 상담 시작"):
     st.session_state.clear()
@@ -373,13 +434,25 @@ if user_input:
                 "응답은 불릿과 표를 적절히 섞어 간결하게 작성하세요."
             )
 
-        with st.expander("📜 프롬프트 보기"):
-            st.code(prompt, language="markdown")
+        #with st.expander("📜 프롬프트 보기"):
+        #    st.code(prompt, language="markdown")
 
         add_message("assistant", "이제 AI 상담사가 맞춤형 마케팅 전략을 생성합니다... ⏳")
 
         with st.chat_message("assistant"):
             st.markdown("### 📈 생성된 마케팅 전략 결과")
-            result = stream_gemini(prompt)  # ⬅️ 스트리밍 출력
+            content_placeholder = st.empty()
+            result = stream_gemini(prompt, output_placeholder=content_placeholder)  # ⬅️ 스트리밍 출력
             if result:
-                st.session_state.chat_history.append({"role": "assistant", "content": result})
+                summary_points = extract_executive_summary(result)
+                if summary_points:
+                    summary_markdown = "#### ⚡ 핵심 요약\n\n" + "\n".join(
+                        f"- {point}" for point in summary_points
+                    )
+                    combined_result = f"{summary_markdown}\n\n---\n\n{result}"
+                    content_placeholder.markdown(combined_result)
+                    st.session_state.chat_history.append(
+                        {"role": "assistant", "content": combined_result}
+                    )
+                else:
+                    st.session_state.chat_history.append({"role": "assistant", "content": result})
