@@ -23,6 +23,18 @@ else:
     st.warning("⚠️ GOOGLE_API_KEY가 설정되어 있지 않습니다. Streamlit secrets에 추가하세요.")
 
 DEFAULT_MODEL = "gemini-2.5-flash"
+DATA_EVIDENCE_GUIDE = (
+    "\n\n추가 지침:\n"
+    "- 각 제안에는 데이터 근거(표/지표/규칙 등)를 함께 표기하세요.\n"
+    "- 가능한 경우 간단한 표나 지표 수치를 활용해 근거를 명확히 보여주세요."
+)
+
+
+def ensure_data_evidence(prompt: str) -> str:
+    """프롬프트에 데이터 근거 지침이 없으면 추가."""
+    if "데이터 근거" in prompt:
+        return prompt
+    return prompt.rstrip() + DATA_EVIDENCE_GUIDE
 
 # ─────────────────────────────
 # 2. Persona 데이터 로드
@@ -348,9 +360,9 @@ if user_input:
 
         # ① persona prompt 또는 ② fallback prompt
         if persona and "prompt" in persona:
-            prompt = persona["prompt"]
+            prompt = ensure_data_evidence(persona["prompt"])
         else:
-            prompt = (
+            prompt = ensure_data_evidence(
                 "다음 상점 정보를 기반으로 3~5단계 Phase별 맞춤형 마케팅 전략을 제안하세요.\n"
                 "각 Phase는 목표, 핵심 액션(채널·컨텐츠·오퍼), 예산범위, 예상 KPI, 다음 Phase로 넘어가는 기준을 포함하세요.\n\n"
                 f"- 업종: {info['업종']}\n"
